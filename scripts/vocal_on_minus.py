@@ -38,6 +38,10 @@ ASR = 22050
 HOP = 256          # analysis rate / hop (11.6 ms)
 RB = ['rubberband', '-q', '-3']
 STEPS = np.array([[1, 1], [1, 2], [2, 1]])
+# Some originals are mixed very vocal-forward (e.g. +4.6 LU in «Qiz toping»); copying that buries the
+# minus under an untrained voice. Same cap as clip_cover.py. Only an upper cap: a quiet original
+# balance is kept as is (raising it would put the cover vocal above the original's level).
+VOCAL_DB_MAX = 3.0
 
 
 def fr2t(i):
@@ -86,6 +90,7 @@ def _resolve_config(args):
         'reverb_db': dsp.DEFAULT_REVERB_DB,
         'room': dsp.DEFAULT_ROOM,
         'delay_db': None,  # None -> reverb_db - 8 (follows --reverb-db, -26 dB by default)
+        'vocal_db': None,  # None -> original vocal/minus balance + 0.5, capped at VOCAL_DB_MAX
         'align': os.environ.get('ALIGN', 'global'),
         'fix_cold': False,
         'match_eq': True,
@@ -125,6 +130,7 @@ def _resolve_config(args):
         'reverb_db': args.reverb_db,
         'room': args.room,
         'delay_db': args.delay_db,
+        'vocal_db': args.vocal_db,
         'align': args.align,
     }
     for k, v in overrides.items():
@@ -155,6 +161,9 @@ def main():
     p.add_argument('--room', type=float, default=None, help=f'Reverb room size 0..1 (default: {dsp.DEFAULT_ROOM})')
     p.add_argument('--delay-db', type=float, default=None,
                    help=f'Delay level in dB (default: reverb_db - 8, i.e. {dsp.DEFAULT_DELAY_DB})')
+    p.add_argument('--vocal-db', type=float, default=None,
+                   help=f'Vocal level over the minus in LU (default: original balance + 0.5, '
+                        f'at most {VOCAL_DB_MAX:+.0f})')
     p.add_argument('--align', choices=['global', 'local', 'shift'], default=None,
                    help='Alignment strategy (default: global)')
     p.add_argument('--fix-cold', action='store_true', help='Apply cold breathiness + denasal cleanup before alignment')
@@ -463,7 +472,12 @@ def main():
     ratio_db = meter.integrated_loudness(origv_st) - meter.integrated_loudness(minus)
     vl = meter.integrated_loudness(vocal_bus.T)
     ml = meter.integrated_loudness(minus)
-    vocal_bus *= 10 ** ((ml + ratio_db + 0.5 - vl) / 20)
+    if cfg.get('vocal_db') is not None:
+        vocal_db, why = float(cfg['vocal_db']), 'set by --vocal-db/config'
+    else:
+        vocal_db = min(ratio_db + 0.5, VOCAL_DB_MAX)
+        why = 'original + 0.5' if vocal_db < VOCAL_DB_MAX else f'capped at {VOCAL_DB_MAX:+.1f}'
+    vocal_bus *= 10 ** ((ml + vocal_db - vl) / 20)
 
     env = np.abs(v)
     env = ss.lfilter([1 - 0.9995], [1, -0.9995], env)
@@ -480,7 +494,8 @@ def main():
     stem_path = f'{out_base} - vokal stem.wav'
     sf.write(stem_path, vocal_bus.T / max(1e-9, float(np.abs(vocal_bus).max())) * 0.9, SR, subtype='PCM_24')
 
-    print(f'bpm {bpm:.1f}, original vocal/minus balance {ratio_db:+.1f} dB')
+    print(f'bpm {bpm:.1f}, original vocal/minus balance {ratio_db:+.1f} dB, '
+          f'cover vocal {vocal_db:+.1f} dB over minus ({why})')
     print(f'final: {meter.integrated_loudness(mix.T):.1f} LUFS, peak {np.abs(mix).max():.2f}')
     meta = {
         'voice': cfg['voice'],

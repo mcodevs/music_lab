@@ -21,12 +21,13 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import numpy as np
 import soundfile as sf
 import librosa
 import scipy.signal as ss
 import pyloudnorm as pyln
-from scipy.ndimage import median_filter
+from scipy.ndimage import median_filter, uniform_filter1d
 from pedalboard import Pedalboard, Compressor, Reverb
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -82,6 +83,62 @@ def contour(m):
     return np.vstack([x / 3 * v_, v_])
 
 
+def _sync_envelope(x, sr, hop):
+    """Log-energy envelope (200 Hz-4 kHz) with the slow trend removed: syllable on/offsets only,
+    so a lav mic and a far, thin camera mic of the same performance correlate."""
+    x = ss.sosfiltfilt(ss.butter(4, [200, 4000], btype='band', fs=sr, output='sos'), x)
+    n = len(x) // hop
+    e = np.log10(np.mean(x[:n * hop].reshape(n, hop) ** 2, axis=1) + 1e-10)
+    e = e - uniform_filter1d(e, size=int(sr / hop))  # remove the 1 s trend (gain/room differences)
+    return (e - e.mean()) / (e.std() + 1e-9)
+
+
+def detect_voice_minus_video(voice, sr, video_path):
+    """Seconds the separate voice recording starts before video frame 0 (`voice_minus_video`).
+
+    Cross-correlates the voice with the video's own camera audio (even a poor 16 kHz track works).
+    The camera audio is decoded on the file timeline, so the video stream's own start_time is
+    added back. Returns (seconds, pearson_r, peak_ratio) or None when the video has no audio.
+    """
+    fs, hop = 16000, 80  # 5 ms envelope steps; parabolic refinement gets ~1 ms
+    with tempfile.TemporaryDirectory() as td:
+        cam_wav = os.path.join(td, 'cam.wav')
+        r = subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', video_path, '-vn',
+                            '-af', 'aresample=async=1:first_pts=0', '-ac', '1', '-ar', str(fs), cam_wav],
+                           capture_output=True)
+        if r.returncode != 0 or not os.path.exists(cam_wav) or os.path.getsize(cam_wav) < 1000:
+            return None
+        cam, _ = sf.read(cam_wav)
+    vs = json.loads(subprocess.run(
+        ['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=start_time',
+         '-of', 'json', video_path], capture_output=True, text=True, check=True).stdout)['streams'][0]
+    v_start = float(vs.get('start_time', 0) or 0)
+
+    ev = _sync_envelope(librosa.resample(voice, orig_sr=sr, target_sr=fs), fs, hop)
+    ec = _sync_envelope(cam.astype(np.float32), fs, hop)
+    c = ss.correlate(ev, ec, mode='full', method='fft')
+    overlap = ss.correlate(np.ones(len(ev)), np.ones(len(ec)), mode='full', method='fft')
+    min_ov = min(int(5.0 * fs / hop), len(ev) // 2, len(ec) // 2)  # need >= 5 s of common material
+    c = np.where(overlap >= min_ov, c / np.maximum(overlap, 1), -np.inf)
+    k = int(np.argmax(c))
+    frac = 0.0
+    if 0 < k < len(c) - 1 and np.isfinite(c[k - 1]) and np.isfinite(c[k + 1]):
+        den = c[k - 1] - 2 * c[k] + c[k + 1]
+        frac = 0.5 * (c[k - 1] - c[k + 1]) / den if den != 0 else 0.0
+    lag = (k - (len(ec) - 1) + frac) * hop / fs  # voice time = camera file time + lag
+
+    # confidence: correlation of the overlapping parts, and best peak vs best peak >= 0.5 s away
+    i = k - (len(ec) - 1)
+    a0, b0 = max(0, i), max(0, -i)
+    n = min(len(ev) - a0, len(ec) - b0)
+    pearson = float(np.corrcoef(ev[a0:a0 + n], ec[b0:b0 + n])[0, 1]) if n > 10 else 0.0
+    far = c.copy()
+    far[max(0, k - int(0.5 * fs / hop)):k + int(0.5 * fs / hop) + 1] = -np.inf
+    second = float(np.max(far)) if np.isfinite(np.max(far)) else 0.0
+    ratio = float(c[k] / second) if second > 0 else float('inf')
+    return lag + v_start, pearson, ratio
+
+
 def init_config(args):
     """Auto-detect line onsets & key shift via energy split + contour DTW, and save clip.json."""
     for lbl, path in [('voice', args.voice), ('orig_vocal', args.orig_vocal), ('minus', args.minus)]:
@@ -90,6 +147,22 @@ def init_config(args):
 
     voice = dsp.load_mono(args.voice, sr=SR)
     origv = dsp.load_mono(args.orig_vocal, sr=SR)
+
+    vmv = args.voice_minus_video
+    if vmv is None and args.video:
+        det = detect_voice_minus_video(voice, SR, args.video)
+        if det is None:
+            vmv = 0.0
+            print('voice_minus_video: video has no audio track; set to 0.0 (measure it by hand)')
+        else:
+            vmv, r, ratio = det
+            vmv = round(float(vmv), 3)
+            weak = r < 0.3 or ratio < 1.3
+            print(f'voice_minus_video: {vmv:+.3f} s auto-detected from the camera audio '
+                  f'(match r={r:.2f}, peak ratio {ratio:.1f})'
+                  + (' -- WEAK match, check lip sync or pass --voice-minus-video' if weak else ''))
+    elif vmv is None:
+        vmv = 0.0
     diag = dsp.diagnose_voice(voice, SR)
     print(f'diagnose: {diag["summary"]}')
     if args.fix_cold:
@@ -136,7 +209,7 @@ def init_config(args):
     slope = float(np.polyfit(orig_onsets, vseg[:, 0], 1)[0]) if len(orig_onsets) >= 2 else 1.0
     # Silence before the minus starts. Largest value (max 1.5 s) for which the clip still opens on
     # real footage: intro <= first voice line - (stretched) first original line - voice/video offset.
-    lead_in = float(vseg[0, 0] - slope * orig_onsets[0] - args.voice_minus_video)
+    lead_in = float(vseg[0, 0] - slope * orig_onsets[0] - vmv)
     intro = round(float(np.clip(lead_in, 0.0, 1.5)), 2)
     if lead_in < 0:
         print(f'note: the minus intro is {-lead_in:.1f} s longer than your lead-in; '
@@ -146,7 +219,7 @@ def init_config(args):
     cfg.update({
         'voice': args.voice,
         'video': args.video or '',
-        'voice_minus_video': args.voice_minus_video,
+        'voice_minus_video': vmv,
         'origv': args.orig_vocal,
         'minus': args.minus,
         'orig_onsets': orig_onsets,
@@ -182,8 +255,9 @@ def main():
     p.add_argument('--orig-vocal', help='Override original vocal stem path')
     p.add_argument('--minus', help='Override minus WAV path')
     p.add_argument('--video', help='Override input video path')
-    p.add_argument('--voice-minus-video', type=float, default=0.0,
-                   help='Seconds user vocal starts before video (for --init, default: 0.0)')
+    p.add_argument('--voice-minus-video', type=float, default=None,
+                   help='Seconds the voice recording starts before the video (for --init; default: '
+                        'auto-detected by cross-correlating with the camera audio)')
     p.add_argument('--title', help='Video title')
     p.add_argument('--subtitle', help='Video subtitle')
     p.add_argument('--tmp', help='Working temp directory')

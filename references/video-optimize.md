@@ -1,6 +1,6 @@
 ---
 name: video-optimize
-description: Videoni optimallashtirish + ovozga effekt retsepti — H.264 CRF 20, 2-pass loudnorm, voice_polish.py bilan qayta mux, audio offset tuzog'i; Untitled2/3.mov (2026-11-14)
+description: Videoni optimallashtirish + ovozga effekt retsepti — H.264 CRF 20, 2-pass loudnorm, voice_polish.py bilan qayta mux; lab-sinxron tuzoqlari (atrim QO'SHMA, fps=30 snap, afftdn 25 ms, ffmpeg normallashtirishi) va mux_av yechimi (2026-11-14)
 metadata:
   type: reference
 ---
@@ -29,8 +29,7 @@ Original o'zgartirilmaydi, yoniga `_optimized.mp4` yoziladi.
   (quruq did: [[vokal-reverb-didi]]) → `output/untitled3_polished.{wav,mp3}`, −15 LUFS, peak −2.3.
 - Optimized videoga `-c:v copy` bilan qayta mux → `~/Desktop/Untitled3_effects.mp4` (AAC 192k).
 - **Tuzoq — lab-sinxron:** .mov da audio `start_time` 0 emas (Untitled3: 0.1668). librosa wav'ni 0 dan
-  boshlaydi, shuning uchun mux'da `-itsoffset <start_time>` qo'yish shart; `-shortest` ishlatma (videoni kesadi).
-  Har doim `ffprobe -show_entries stream=start_time` bilan tekshir.
+  boshlaydi, shuning uchun mux'da offset berish shart; `-shortest` ishlatma (videoni kesadi).
 - Holat: eshitib tasdiqlanmagan; reverb ko'p desa −22 dB ga tushir.
 
 ## 3. Untitled2.mov ("buni ham")
@@ -42,9 +41,27 @@ Original o'zgartirilmaydi, yoniga `_optimized.mp4` yoziladi.
 - "Studiyadagidek tiniq qil" → `voice_polish.py work/umar_onam/voice.wav "Umar - Onam (studio)" -18 0.5`
   → `output/Umar - Onam (studio).{wav,mp3}` (−15 LUFS, peak −3) → `~/Desktop/umar_onam_studio.mp4`.
 - Shovqin fon −72 dB (iPhone o'zi tozalagan) — denoise kerak bo'lmadi.
-- **Mux usuli (afzal):** `-itsoffset` o'rniga `-af "adelay=<start_ms>|<start_ms>"` (start_time=0.1467 → 147).
 - **Sinxron tekshiruvi tuzog'i:** `ffmpeg -vn` decode `start_time` ni tashlab yuboradi → noto'g'ri "lag".
-  To'g'ri: `-af aresample=async=1:first_pts=0` bilan ikkala faylni decode qilib xcorr (natija 0.25 ms).
+  To'g'ri: `-af aresample=async=1:first_pts=0` bilan ikkala faylni decode qilib xcorr.
 - Holat: foydalanuvchi eshitib tasdiqlamagan.
 
-Bog'liq: [[video-plugins]], [[voice-polish-chain]], [[home-studio-gear]].
+## 5. Lab-sinxron: o'lchangan tuzoqlar va `video_optimize.py` dizayni (2026-11-14)
+Sintetik kliplarda o'lchandi (v/a start: 0.15/0, 0.14/0, 0/0.18, 0.02/0.029 @48k).
+- **`atrim` QO'SHMA** (Antigravity 2b): audio-videodan-oldin holatni offset allaqachon qoplaydi, atrim siljishni ikki marta qo'llaydi.
+- **`fps=30` boshlang'ich snap:** kech boshlangan videoning birinchi kadri 1/30 s to'riga suriladi
+  (0.150 → 0.167): tasvir ovozdan yarim kadrgacha (16.7 ms) orqada qoladi.
+- **`afftdn` 25 ms kechiktiradi** (ffmpeg 9: 44.1k da 1102, 48k da 1200 sample), uzunlik o'zgarmaydi →
+  eski `_optimized.mp4` ovozi doim 25 ms kech edi. `anlmdn` 8 ms, `afwtdn` 0 ms (lekin boshqa sifat).
+- **ffmpeg har bir kirishni eng erta oqim boshiga normallashtiradi** (`-copyts` siz): bir faylda qilingan
+  `-itsoffset` keyingi mux'da yo'qolishi mumkin; AAC/loudnorm audio boshini ~10 ms siljitdi.
+- **Yechim (`mux_av`):** video alohida kodlanadi (faqat video fayl → boshi 0), audio wav'ga
+  (afftdn kechikishi sintetik signalda o'lchanib sample-aniq kesiladi), so'ng ikkalasi manba
+  `a_start − v_start` bo'yicha aniq joylanadi: video `-itsoffset`, audio `adelay=<N>S`.
+  Natija: `_optimized` 0.0 ms, `_effects` −1.9 ms (barcha holatlarda).
+- **`check_sync_lag_ms`:** xom |y| xcorr pitch-davr cho'qqisiga sakrardi (170 Hz ovozda −5.9 ms, past erkak
+  ovozida ~15 ms bo'lishi mumkin). Endi 40 Hz konvert + parabolik aniqlik (xato ≤2 ms).
+  `check_av_sync` video siljishini fayl boshiga (format start_time) nisbatan hisoblaydi.
+- Portret (burilgan) .mov: `probe_streams` ko'rsatish o'lchamini beradi (360×640), chiqish ham portret.
+- Regressiya: `scripts/selftest.py` 7-test (pos/neg offset + portret).
+
+Bog'liq: [[video-plugins]], [[voice-polish-chain]], [[home-studio-gear]], [[refaktoring-review]].
