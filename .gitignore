@@ -11,6 +11,8 @@ output/
 work/
 videos/
 
-# Large binary assets (FluidR3_GM.sf2 is 148 MB, over GitHub's 100 MB limit)
-soundfonts/
+# Large binary assets (FluidR3_GM.sf2 is 148 MB, over GitHub's 100 MB limit).
+# Get it with: sh scripts/get_soundfont.sh  (see soundfonts/README.md)
+soundfonts/*
+!soundfonts/README.md
 *.sf2

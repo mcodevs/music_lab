@@ -34,7 +34,8 @@ Skriptlar har doim `.venv/bin/python -I scripts/...` bilan ishga tushiriladi.
 - **Rubber Band `--pitchmap`** realtime rejimni yoqadi, lekin o'lchandi: kechikish 0.2 ms,
   uzunlik o'zgarmaydi — xavfsiz.
 - **SoundFont:** fluidsynth bilan faqat kichik sinov sf2 keladi. FluidR3_GM (142 MB) rasmiy
-  Debian paketidan olingan (`fluid-soundfont-gm_3.1-6_all.deb`).
+  Debian paketidan olingan (`fluid-soundfont-gm_3.1-6_all.deb`). Git'da yo'q; qayta olish uchun
+  `sh scripts/get_soundfont.sh` (SHA-256 `74594e8f…1cb0`), batafsil `soundfonts/README.md` ([[git-repo]]).
 - **Internet:** iPhone hotspot orqali (172.20.10.x) torch ~12 daqiqa, Demucs modellari
   ~0.2 MB/s yuklandi. Katta yuklashni foydalanuvchiga oldindan ayt.
 - Obsidian vault = `~/my_projects`, ya'ni `music_lab/` papkasining o'zi.

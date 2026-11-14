@@ -17,6 +17,8 @@ Run scripts with `.venv/bin/python -I script.py` and keep work files in `work/`,
 - **pretty_midi** — build/edit MIDI: melody, chords, bass, drums.
 - **fluidsynth** + General MIDI SoundFont `soundfonts/FluidR3_GM.sf2` — render MIDI → WAV:
   `fluidsynth -ni -q -g 0.8 -r 44100 -F out.wav soundfonts/FluidR3_GM.sf2 in.mid`
+  The .sf2 is not in git (148 MB). If it is missing, tell the user it is a ~120 MB download and, on their OK,
+  run `sh scripts/get_soundfont.sh` (official Debian package, SHA-256 checked; see `soundfonts/README.md`).
 - **pedalboard** (Spotify) — vocal FX: HPF, compressor, EQ, reverb, delay, chorus, autotune-ish via pitch shift, limiter.
 - **pyloudnorm** — master loudness to ~-14 LUFS.
 - **Demucs 4.1** (Meta) — song/video → minus/instrumental + vocal stems via `scripts/separate_minus.py`:
