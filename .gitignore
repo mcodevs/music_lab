@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Generated audio/video and working files
+output/
+work/
+videos/
+
+# Large binary assets (FluidR3_GM.sf2 is 148 MB, over GitHub's 100 MB limit)
+soundfonts/
+*.sf2

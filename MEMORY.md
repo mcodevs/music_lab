@@ -1,0 +1,12 @@
+- [Voice polish chain](references/voice-polish-chain.md) — scripts/voice_polish.py: telefon ovoz memosiga EQ, de-esser, kompressor, reverb/delay, −15 LUFS (2026-11-13)
+- [Home studio gear](references/home-studio-gear.md) — MacBook + iPhone SE + AirPods + J6 lav mic; vokal uchun simli quloqchin, yangilash tartibi (2026-11-13)
+- [Vocal on minus](references/vocal-on-minus.md) — scripts/vocal_on_minus.py: a cappella vokalni minusga DTW + pitch + time-stretch bilan moslab mix, −12 LUFS; «Мои слезы» cover (2026-11-13)
+- [Video plugins](references/video-plugins.md) — ffmpeg-llm, watch-video, Video Cleanup, video-shotcraft + yt-dlp (brew), faster-whisper (.venv); YouTube → videos/<id>.mp4, AV1 tuzog'i (2026-11-13)
+- [Minus ajratish](references/minus-ajratish.md) — Demucs htdemucs_ft bilan qo'shiq/video → minus + vokal, sifat tekshiruvi (qolgan vokal < −40 dB) (2026-11-13)
+- [Qiz toping klip](references/qiz-toping-klip.md) — scripts/clip_cover.py: a cappella video + lav vokal → minus ustida klip, lab-sinxron, ton drifti qator bo'yicha; reverb −18 dB (2026-11-14)
+- [Vokal reverb didi](references/vokal-reverb-didi.md) — quruq vokal: reverb −18 dB / room 0.5 / delay −26 dan boshla (2 marta "ko'p" deyildi) (2026-11-14)
+- [Shamollash tuzatish](references/shamollash-tuzatish.md) — voice_cold_fix (xirillash) + yangi voice_denasal.py 0.7 ✅ tasdiqlangan (ming'illash: 500 Hz/1.4 kHz rezonans, 2–3 kHz qaytarish) (2026-11-14)
+- [Video optimize](references/video-optimize.md) — H.264 CRF 20 + 2-pass loudnorm −14; effekt uchun voice_polish.py −18/0.5 → qayta mux, .mov audio offset (−itsoffset 0.167) tuzog'i; Untitled3 ; umar_onam studio (adelay mux, sinxron tekshiruv tuzog'i) (2026-11-14)
+- [Workspace tozalandi](references/workspace-tozalandi.md) — output/, work/, videos/ bo'shatildi (Savatga, ~1.17 GB); eski notalardagi output/work yo'llari endi yo'q, skriptlar/retseptlar saqlangan (2026-11-14)
+- **Skriptlar refaktoringi (2026-11-14):** `scripts/dsp.py` (umumiy DSP, `diagnose_voice`, quruq standart `-18 dB / 0.5 / -26 dB`, `master_limiter`), universal CLI (`vocal_on_minus.py`, `phrase_timing.py`, `clip_cover.py --init`) va yangi CLI vositalar: `scripts/separate_minus.py`, `scripts/video_optimize.py` qo'shildi.
+- [Refaktoring review](references/refaktoring-review.md) — Antigravity refaktoringi 7/10 → xatolar tuzatildi: diagnostika qayta kalibrlandi (autokorr HNR <15, LTAS rezonans) va faqat maslahat beradi; f0 kesh kontent-hash; --config work_dir; clip_cover intro/portret; haqiqiy ovozda chegaralar hali tekshirilmagan (2026-11-14)
