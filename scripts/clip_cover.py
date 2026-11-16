@@ -57,6 +57,7 @@ DEFAULT_CFG = dict(
     room=dsp.DEFAULT_ROOM,
     delay_db=None,  # None -> reverb_db - 8 (-26 dB with the default reverb)
     fix_cold=False,
+    sing_along=False,
 )
 
 
@@ -139,6 +140,33 @@ def detect_voice_minus_video(voice, sr, video_path):
     return lag + v_start, pearson, ratio
 
 
+def detect_sing_along_lag(va, oa, sr):
+    """Seconds the user's voice runs later than the original vocal, for a take sung along with the
+    record (heard on headphones): one global offset from syllable-envelope cross-correlation.
+    Returns (lag, pearson_r, peak_ratio) like detect_voice_minus_video."""
+    fs, hop = 16000, 80
+    ev = _sync_envelope(librosa.resample(va, orig_sr=sr, target_sr=fs), fs, hop)
+    eo = _sync_envelope(librosa.resample(oa, orig_sr=sr, target_sr=fs), fs, hop)
+    c = ss.correlate(ev, eo, mode='full', method='fft')
+    overlap = ss.correlate(np.ones(len(ev)), np.ones(len(eo)), mode='full', method='fft')
+    min_ov = min(int(20.0 * fs / hop), len(ev) // 2, len(eo) // 2)
+    c = np.where(overlap >= min_ov, c / np.maximum(overlap, 1), -np.inf)
+    k = int(np.argmax(c))
+    frac = 0.0
+    if 0 < k < len(c) - 1 and np.isfinite(c[k - 1]) and np.isfinite(c[k + 1]):
+        den = c[k - 1] - 2 * c[k] + c[k + 1]
+        frac = 0.5 * (c[k - 1] - c[k + 1]) / den if den != 0 else 0.0
+    i = k - (len(eo) - 1)
+    a0, b0 = max(0, i), max(0, -i)
+    n = min(len(ev) - a0, len(eo) - b0)
+    pearson = float(np.corrcoef(ev[a0:a0 + n], eo[b0:b0 + n])[0, 1]) if n > 10 else 0.0
+    far = c.copy()
+    far[max(0, k - int(0.5 * fs / hop)):k + int(0.5 * fs / hop) + 1] = -np.inf
+    second = float(np.max(far)) if np.isfinite(np.max(far)) else 0.0
+    ratio = float(c[k] / second) if second > 0 else float('inf')
+    return (i + frac) * hop / fs, pearson, ratio
+
+
 def init_config(args):
     """Auto-detect line onsets & key shift via energy split + contour DTW, and save clip.json."""
     for lbl, path in [('voice', args.voice), ('orig_vocal', args.orig_vocal), ('minus', args.minus)]:
@@ -176,22 +204,43 @@ def init_config(args):
     if len(vseg) == 0:
         sys.exit('No vocal lines detected in user voice.')
 
-    v_midi = dsp.f0_pyin(va, sr=ASR, fmin=65, fmax=1000, hop_length=HOP)
-    o_midi = dsp.f0_pyin(oa, sr=ASR, fmin=65, fmax=1000, hop_length=HOP)
-    _, wp = librosa.sequence.dtw(
-        contour(v_midi), contour(o_midi), subseq=True, step_sizes_sigma=np.array([[1, 1], [1, 2], [2, 1]])
-    )
-    wp = wp[::-1]
-    vt = wp[:, 0] * HOP / ASR
-    ot = wp[:, 1] * HOP / ASR
+    out_dir = os.path.dirname(os.path.abspath(args.init))
+    tmp_dir = args.tmp or os.path.join(out_dir, 'clip')
+    os.makedirs(tmp_dir, exist_ok=True)
+    # same cache names as the render step, so pYIN runs once per take
+    v_midi = dsp.f0_cached(va, ASR, f'{tmp_dir}/voice_f0.npy', hop_length=HOP)
+    o_midi = dsp.f0_cached(oa, ASR, f'{tmp_dir}/orig_f0.npy', hop_length=HOP)
 
-    d = v_midi[wp[:, 0]] - o_midi[wp[:, 1]]
-    d = d[~np.isnan(d)]
-    minus_shift = int(((int(round(float(np.median(d)))) + 6) % 12) - 6) if len(d) >= 10 else 0
-
-    if len(oseg) == len(vseg):
-        orig_onsets = [round(float(t), 2) for t in oseg[:, 0]]
+    if args.sing_along:
+        # Sung along with the record: one global offset, every line keeps its own timing, so
+        # neither the voice nor the video is warped (stretch ratios are exactly 1).
+        lag, r, ratio = detect_sing_along_lag(va, oa, ASR)
+        print(f'sing-along: voice is {lag:+.3f} s later than the original vocal '
+              f'(match r={r:.2f}, peak ratio {ratio:.1f})'
+              + (' -- WEAK match, is this really a sing-along take?' if r < 0.3 or ratio < 1.3 else ''))
+        sh = int(round(lag * ASR / HOP))
+        vv, oo = (v_midi[sh:], o_midi) if sh >= 0 else (v_midi, o_midi[-sh:])
+        n = min(len(vv), len(oo))
+        d = vv[:n] - oo[:n]
+        orig_onsets = [round(float(u - lag), 3) for u in vseg[:, 0]]
     else:
+        _, wp = librosa.sequence.dtw(
+            contour(v_midi), contour(o_midi), subseq=True, step_sizes_sigma=np.array([[1, 1], [1, 2], [2, 1]])
+        )
+        wp = wp[::-1]
+        vt = wp[:, 0] * HOP / ASR
+        ot = wp[:, 1] * HOP / ASR
+        d = v_midi[wp[:, 0]] - o_midi[wp[:, 1]]
+        orig_onsets = None
+
+    d = d[~np.isnan(d)]
+    # Fold to [-6, 6) before the median: a singer who takes some parts an octave away from the
+    # original (e.g. a duet's other voice) would otherwise drag the median to a wrong key.
+    minus_shift = int(round(float(np.median((d + 6) % 12 - 6)))) if len(d) >= 10 else 0
+
+    if orig_onsets is None and len(oseg) == len(vseg):
+        orig_onsets = [round(float(t), 2) for t in oseg[:, 0]]
+    elif orig_onsets is None:
         used = set()
         orig_onsets = []
         o_starts = oseg[:, 0] if len(oseg) else np.array([])
@@ -214,7 +263,10 @@ def init_config(args):
     if lead_in < 0:
         print(f'note: the minus intro is {-lead_in:.1f} s longer than your lead-in; '
               f'the first video frame will be held for that long (intro=0)')
-    out_dir = os.path.dirname(os.path.abspath(args.init))
+    if intro + orig_onsets[0] < 0:
+        # a sing-along take with talking/noise before the record starts: the time map would run backwards
+        sys.exit(f'first voice line starts {-orig_onsets[0]:.1f} s before the song; '
+                 f'trim the take so it starts with the record, then rerun --init')
     cfg = dict(DEFAULT_CFG)
     cfg.update({
         'voice': args.voice,
@@ -226,13 +278,14 @@ def init_config(args):
         'minus_shift': minus_shift,
         'title': args.title or 'Cover',
         'subtitle': args.subtitle or 'cover',
-        'tmp': args.tmp or os.path.join(out_dir, 'clip'),
+        'tmp': tmp_dir,
         'intro': intro,
         'reverb_db': args.reverb_db if args.reverb_db is not None else dsp.DEFAULT_REVERB_DB,
         'room': args.room if args.room is not None else dsp.DEFAULT_ROOM,
         'delay_db': args.delay_db,
         # Only on explicit request: diagnostics are advisory and must not change a healthy voice.
         'fix_cold': bool(args.fix_cold),
+        'sing_along': bool(args.sing_along),
     })
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -266,6 +319,9 @@ def main():
     p.add_argument('--delay-db', type=float, default=None,
                    help=f'Delay level dB (default: reverb_db - 8, i.e. {dsp.DEFAULT_DELAY_DB})')
     p.add_argument('--fix-cold', action='store_true', help='Apply cold breathiness + denasal cleanup before alignment')
+    p.add_argument('--sing-along', action='store_true',
+                   help='For --init: the take was sung along with the record (headphones). Use one global '
+                        'offset instead of per-line warping, so voice and video keep their own timing')
     args = p.parse_args()
 
     # Resolve user-given paths against the caller's cwd before switching to the project root.
@@ -398,6 +454,13 @@ def main():
         print('warning: no line had enough pitched frames for drift measurement; per-line fix disabled')
         line_shift[:] = 0.0
     line_shift = np.where(np.isnan(line_shift), np.nanmedian(line_shift), line_shift)
+    if CFG.get('sing_along'):
+        # Sung with the record playing, so the key cannot drift: a large per-line "drift" is a
+        # measurement error (duet harmony or a second voice in the original stem). Keep small,
+        # consistent offsets only.
+        bad = (np.abs(line_shift) > 0.75) | (line_iqr > 1.0)
+        print(f'sing-along: {int(bad.sum())} unreliable line shifts set to 0')
+        line_shift[bad] = 0.0
     print('per-line pitch fix (st):', ' '.join(f'{x:+.1f}' for x in line_shift))
     print('   contour spread (IQR):', ' '.join(f'{x:.1f}' for x in line_iqr))
 

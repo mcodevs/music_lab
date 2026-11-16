@@ -77,6 +77,7 @@ Run scripts with `.venv/bin/python -I script.py` and keep work files in `work/`,
 
 ## Step 2D — Lip-synced clip cover & video optimization
 - **Music-video cover (`scripts/clip_cover.py`):** initialize `clip.json` with `--init work/<name>/clip.json --voice ... --orig-vocal ... --minus ... --video ...` (auto-detects `voice_minus_video` when `--video` has audio), review `orig_onsets`/`minus_shift`, then run `.venv/bin/python -I scripts/clip_cover.py work/<name>/clip.json`.
+  - **Sung along with the record (headphones)?** add `--sing-along` to `--init`: one global voice-vs-original offset (envelope xcorr), no line warping (ratios 1.000, lip sync untouched), per-line pitch "drift" fix limited to ≤0.75 st with IQR ≤1.0 (duet harmony in the original stem gave false ±2–5 st shifts). `minus_shift` is now the median of octave-folded intervals (a singer taking the other voice an octave up no longer reads as −2 st).
 - **Video + audio polish (`scripts/video_optimize.py`):** `.venv/bin/python -I scripts/video_optimize.py video.mov --polish-voice --verify-ssim` (exports `_optimized.mp4` + `_effects.mp4`; prints a lip-sync line for each, tolerance half a 30 fps frame, typical error ±2 ms).
   Sync traps (see `references/video-optimize.md`): never atrim the audio-before-video case; `fps=30` snaps a late video start to the 1/30 s grid; `afftdn` delays audio 25 ms; ffmpeg re-normalizes every input to its earliest stream — so mux from a video-only file with explicit offsets.
 

@@ -1,6 +1,6 @@
 ---
 name: git-repo
-description: music_lab git repo + PUBLIC GitHub (mcodevs/music_lab); .gitignore va soundfont qayta olish; holat — antigravity/improvements (aedd928 + notalar) main'ga fast-forward qilinib push qilindi (2026-11-14)
+description: music_lab git repo + PUBLIC GitHub (mcodevs/music_lab); .gitignore va soundfont qayta olish; holat — antigravity/improvements main'ga fast-forward + push (e2d1d94), checkout main'da; public notalarda shaxsiy ma'lumot bor — qaror kutilmoqda (2026-11-14)
 metadata:
   type: project
 ---
@@ -17,10 +17,17 @@ Repo **public**: buni foydalanuvchi o'zi tanladi (private tavsiya qilingan edi).
   - [[refaktoring-review]] rejasi.
 - Commit'da Claude va Antigravity o'zgarishlari aralash.
 - Foydalanuvchi "merge + push" dedi:
-  - notalar commit qilindi;
-  - `main` checkout'siz fast-forward qilindi (`git fetch . antigravity/improvements:main`);
-  - `git push origin main` bajarildi.
-- Checkout `antigravity/improvements` da qoldirildi, chunki Antigravity shu branch'da ishlayapti. Branch remote'ga push qilinmagan.
+  - notalar commit qilindi (`e2d1d94`);
+  - `main` fast-forward qilindi;
+  - `origin/main` = `e2d1d94`.
+- Keyin foydalanuvchi so'rovi bilan checkout **`main`** ga qaytarildi.
+- `antigravity/improvements` lokal qoldi (`main` bilan bir commit'da). U remote'ga push qilinmagan.
+- Antigravity hali o'zini o'z branch'ida deb o'ylashi mumkin: uning keyingi commit'lari endi `main` ga tushadi.
+- **Maxfiylik (to'liq loyiha tekshiruvida topildi):** push qilingan `references/` va `MEMORY.md` da shaxsiy tafsilotlar bor:
+  - bola ismi ("Umar - Onam");
+  - Desktop/Downloads fayl nomlari;
+  - uy studiyasi jihozlari.
+  Foydalanuvchi qaror qilishi kerak: repoyni private qilish yoki notalarni repodan chiqarish (ular git tarixida ham qoladi).
 
 ## .gitignore
 - Repoga kirmaydi: `.venv/`, `__pycache__/`, `.DS_Store`, `output/`, `work/`, `videos/`.

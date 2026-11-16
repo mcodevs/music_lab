@@ -1,46 +1,83 @@
 ---
 name: refaktoring-review
-description: Antigravity refaktoringi ko'rib chiqildi (7/10) va tuzatildi; uning keyingi 6 bandli rejasi Claude tomonidan bajarildi (2b atrim — QILINMADI), melody_to_song + selftest e2e qo'shildi, video sinxron xatolari topildi (2026-11-14)
+description: Antigravity refaktoringi (7/10) tuzatildi; uning 6 bandli rejasi Claude tomonidan bajarildi (2b atrim — yo'q); 2026-11-14 to'liq loyiha review'i (3 agent) — ~45 kamchilik, eng og'irlari clip_cover VFR drift va kirill sarlavha, tuzatilmagan
 metadata:
   type: project
 ---
 
 # Skriptlar refaktoringi: review va tuzatishlar (2026-11-14)
 
-Antigravity `scripts/` ni qayta yozdi: umumiy `dsp.py`, universal CLI'lar, yangi `separate_minus.py` va `video_optimize.py`. Claude ko'rib chiqdi (7/10), foydalanuvchi "Ha, tuzat" dedi va xatolar shu kuni tuzatildi. Hammasi sintetik audio va videoda qayta sinab ko'rildi.
+## 1-bosqich: Antigravity refaktoringi (7/10) → tuzatildi
+- Diagnostika qayta kalibrlandi:
+  - HNR — Praat uslubidagi autokorrelyatsiya;
+  - burun rezonansi — LTAS.
+- Diagnostika faqat maslahat beradi, `fix_cold` faqat `--fix-cold` bilan yoqiladi ([[shamollash-tuzatish]]).
+- f0 keshi kontent-hash bilan saqlanadi.
+- `clip_cover`: intro avtomatik, uzun minus kirishida kadr ushlanadi, portret 720×1280.
+- Delay = reverb − 8 dB. Loyiha git'ga olindi ([[git-repo]]).
 
-## Nimalar o'zgardi (1-bosqich)
-- **Diagnostika qayta kalibrlandi** (`dsp.diagnose_voice`):
-  - HNR endi Praat uslubidagi autokorrelyatsiya bilan o'lchanadi. Natijalar: toza ≈26–28 dB, nafasli ≈16–17, xirillagan ≈6–11. Eski harmonik-taroq usuli hammasiga ≈12–14 dB berardi.
-  - Burun rezonansi endi LTAS orqali o'lchanadi (1/3 oktava minus 1.5 oktava trend).
-  - Chegaralar: HNR < 15 dB yoki 500 Hz > 2.5 dB / 1.4 kHz > 3.5 dB bo'lsa, `--fix-cold suggested` chiqadi. «Белтепа» shamollagan yozuvi bu shkalada ≈14 dB ([[shamollash-tuzatish]]).
-- **Hech bir skript shamollash tuzatishini o'zi yoqmaydi.** `fix_cold` faqat `--fix-cold` bilan.
-- **f0 keshi** `tmp/<nom>_f0_<kontent-hash>.npy` — eski kesh boshqa take'ga ishlatilmaydi.
-- `vocal_on_minus.py --config`: `work_dir` config papkasidan; nisbiy yo'llar ishga tushirilgan papkaga nisbatan.
-- Delay `--reverb-db` ga ergashadi (reverb − 8 dB, standart −26).
-- `clip_cover.py`: intro avtomatik, uzun minus kirishida birinchi kadr ushlanadi, portret iPhone .mov → 720×1280.
-- `align_analysis.py`: jimlikdagi NaN DTW tuzatildi. Loyiha git'ga olindi ([[git-repo]]).
+## 2-bosqich: Antigravity'ning 6 bandli rejasi — Claude bajardi
+Bajarilganlar:
+- offset avto-topish;
+- `video_optimize` portret, `--delay-db`;
+- `separate_minus` uchun `--project` va `--voice`;
+- vokal balansi cheklovi (+3 dB) va `--vocal-db`;
+- `melody_to_song.py`;
+- `selftest.py` (Antigravity parallel yozdi, Claude e2e testlar qo'shdi).
 
-## 2-bosqich: Antigravity'ning 6 bandli rejasi — Claude bajardi ("Ha, bajar")
-| # | Band | Holat |
-|---|---|---|
-| 1 | `clip_cover --init`: `voice_minus_video` xcorr bilan avtomatik (r + peak ratio, WEAK ogohlantirish) | ✅ xato ~2 ms |
-| 2a | `video_optimize` portret o'lchami | ✅ |
-| 2b | manfiy offset uchun `atrim` | ❌ **qilinmadi** (sinxronni buzadi) |
-| 2c | `--delay-db` | ✅ |
-| 3 | `separate_minus`: `--work-dir` abspath, `--four-stems` qayta yig'ish, src wav o'chirish, `--project`, `--voice` (Demucs bilan take tozalash) | ✅ Demucs yo'li sinaldi |
-| 4 | `vocal_on_minus` balansi: auto `min(ratio+0.5, +3.0)`, `--vocal-db` | ✅ |
-| 5 | `melody_to_song.py` (hum → basic-pitch → kalit/Viterbi akkordlar → fluidsynth → mix −14) | ✅ sintetik hum'da: 22/22 nota, Am, 95.7 bpm (asli 96) |
-| 6 | `selftest.py` | ✅ (pastga qarang) |
+2b (atrim) **qilinmadi**.
 
-**Selftest:** Antigravity ham parallel ravishda (16:51, Claude ishlayotgan paytda) `selftest.py` ni yozdi — xuddi shu repo'da, bir vaqtda. Claude uni o'chirmadi, ustiga e2e testlar qo'shdi: melody render, vocal_on_minus (+3 cap, `--vocal-db`), clip_cover init+portret render, `--demucs`. `--quick` ≈7 s, to'liq ≈50 s, `--demucs` +13 s. `output/`/`work/` toza qoladi, `work/vocal_on_minus.json` pointer tiklanadi.
+Selftest topgan va tuzatilgan video sinxron xatolari: [[video-optimize]] 5-bo'lim. Commit `aedd928`, keyin `main` ga push qilindi.
 
-**Selftest topgan haqiqiy xatolar** ([[video-optimize]] 5-bo'lim): sinxron o'lchovi pitch-davrga sakrardi; `fps=30` snap (16.7 ms); `afftdn` 25 ms kechikish (`_optimized.mp4` doim kech edi); ffmpeg normallashtirishi. Hammasi `mux_av` bilan tuzatildi.
+## 3-bosqich: to'liq loyiha review'i (2026-11-14, Antigravity to'xtagan)
+Kod 3 qismga bo'linib, 3 ta agentga berildi. Ular sintetik media bilan amalda sinashdi. Eng og'ir topilmalarni Claude kodda qayta tasdiqladi.
+
+Natija: **~45 kamchilik, hali hech biri tuzatilmagan.** Batafsil ro'yxat:
+- `vocal_on_minus` / `phrase_timing` → [[vocal-on-minus]];
+- `melody_to_song`, `requirements.txt`, `get_soundfont.sh`, selftest → [[music-toolkit]].
+
+### Eng og'irlari (foydalanuvchi ishiga bevosita ta'sir qiladi)
+- **`clip_cover` VFR lab-sinxron drifti** (tasdiqlangan, emulyatsiya):
+  - kadrlar `avg_frame_rate` bo'yicha indekslanadi, lekin ffmpeg rawvideo CFR'da (`r_frame_rate`) dekod qiladi;
+  - 300 kadrdan 1 tasi tushib qolgan telefon videosida 4 daqiqalik qo'shiq oxiriga kelib ~0.7 s siljiydi;
+  - yechim: `-vf fps=30` bilan dekod qilish va 30 bo'yicha indekslash.
+- **Kirill sarlavha to'rtburchak bo'lib chiqadi:** `clip_cover` sarlavhasi Didot shriftida, unda kirill glyph'lari yo'q (fontTools bilan tasdiqlandi). Avenir Next'da kirill bor.
+- **Avto-offset noto'g'ri** (`clip_cover`), ikki holatda:
+  - video audiodan >1 kadr keyin boshlansa;
+  - .ts/.MTS fayllarda (format `start_time` ayrilmaydi).
+- **`vocal_on_minus` umumiy papka:** `--project` siz ishlatilsa, `work/phrase_shifts.json` qo'shiqlar orasida umumiy bo'ladi. `--suggest` qayta ishga tushirilsa, eski tuzatishni bekor qiladi.
+- **`vocal_on_minus` yiqiladi**, agar ovoz originalning yarmidan qisqa bo'lsa.
+- **`melody_to_song` minor tonallik:** V akkord hech qachon tanlanmaydi va kuylangan G# bilan to'qnashadi.
+- **`requirements.txt` to'liq emas:** pillow, demucs, torch va matplotlib yo'q, shuning uchun yangi o'rnatish buziladi.
+- **Maxfiylik:** public repoda shaxsiy notalar bor ([[git-repo]]).
+
+### clip_cover / separate_minus / video_optimize: qolganlari
+- `clip_cover`:
+  - 48 kHz minus berilsa, `assert` bilan yiqiladi;
+  - video oxirgi qatordan oldin tugasa, qator jimgina kesiladi (rubberband stderr yutiladi);
+  - reverb dumi minusning o'zining oxiridan olinadi, kesilgan joydan emas;
+  - rang BT.601 bilan kodlanadi va teglanmaydi (rang siljiydi);
+  - tmp papka (qo'shiq boshiga ~170 MB) tozalanmaydi.
+- `separate_minus`:
+  - Demucs `--clip-mode rescale` stem gain'larini buzishi mumkin (taxminiy);
+  - Demucs xato bersa, temp wav qoladi;
+  - `--device` uchun cpu fallback yo'q, help esa bor deb aytadi.
+- `video_optimize`:
+  - 0.4 s dan qisqa klip NaN bilan yiqiladi;
+  - jim audioda soxta "−500 ms WARNING" chiqadi.
+
+### Mustahkam chiqqanlar
+- `video_optimize` sinxroni: barcha holatlarda haqiqiy xato 0.0 ms — VFR, 25/60 fps, ±offset, .ts, burilgan video, 44.1/48k, kirill va qo'shtirnoqli fayl nomlari.
+- Rotation ±90/180/270.
+- Demucs nomlash va slug.
+- Diagnostika guard'lari, `master_limiter`, Match-EQ, Rubber Band pitchmap birliklari.
+- Akkord jadvali, Viterbi, bas oktavasi.
+- `get_soundfont.sh` macOS'da: sintetik .deb bilan to'liq oqim ishladi; real URL 200 qaytaradi, SHA mos keladi.
 
 ## Hali qolgan
-- Haqiqiy shamollagan/burunli yozuvda diagnostika chegaralari tekshirilmagan (workspace tozalangan).
-- `melody_to_song` faqat sintetik hum'da sinalgan; haqiqiy hum (nafas, noaniq pitch) bilan quloq bilan tekshirish kerak.
-- `get_soundfont.sh` ning yuklash qismi sinalmagan.
-- Ikki agent (Claude + Antigravity) bir papkada bir vaqtda yozmasin: alohida branch/worktree, keyin `git diff` bilan review.
+- Yuqoridagi kamchiliklarni tuzatish: foydalanuvchi ustuvorlikni tanlaydi.
+- Haqiqiy shamollagan ovozda diagnostika chegaralarini tekshirish.
+- Haqiqiy xirgoyida `melody_to_song` ni quloq bilan tekshirish.
+- Agentlar alohida branch'da ishlasin.
 
-Bog'liq: [[vocal-on-minus]], [[qiz-toping-klip]], [[video-optimize]], [[voice-polish-chain]], [[vokal-reverb-didi]], [[shamollash-tuzatish]], [[git-repo]], [[music-toolkit]]
+Bog'liq: [[vocal-on-minus]], [[qiz-toping-klip]], [[video-optimize]], [[music-toolkit]], [[voice-polish-chain]], [[shamollash-tuzatish]], [[git-repo]]
